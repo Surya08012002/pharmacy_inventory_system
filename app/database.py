@@ -1,6 +1,3 @@
-
-
-
 from pymongo import MongoClient
 
 # Connect to MongoDB running locally
@@ -12,3 +9,5 @@ db = client["pharmacy"]
 # Access or create the medicines collection
 medicine_collection = db["medicines"]
 
+# Access or create the sales collection
+sales_collection = db["sales"]
