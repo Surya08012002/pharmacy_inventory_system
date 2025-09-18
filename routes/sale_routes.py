@@ -73,7 +73,7 @@ def delete_sales_by_medicine(medicine_name: str):
         raise HTTPException(status_code=404, detail=f"No sales found for {medicine_name}")
     return {"message": f"All sales for {medicine_name} deleted successfully. Count: {result.deleted_count}"}
 
-# ✅ New Feature: Delete sale by ID
+# Delete sale by ID
 @router.delete("/delete-by-id/{sale_id}")
 def delete_sale_by_id(sale_id: str):
     if not ObjectId.is_valid(sale_id):
