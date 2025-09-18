@@ -1,21 +1,22 @@
 from fastapi import APIRouter, HTTPException
 from models.sale import Sale
 from app.database import sales_collection, medicine_collection
+from bson import ObjectId
 from datetime import datetime
 
 router = APIRouter(prefix="/sales", tags=["Sales"])
 
-# Helper to safely convert MongoDB documents into JSON serializable dicts
+# Helper to convert MongoDB documents to dict
 def sale_helper(sale) -> dict:
     return {
-        "id": str(sale.get("_id")),
-        "medicine_name": sale.get("medicine_name"),
-        "quantity_sold": sale.get("quantity_sold"),
-        "sale_date": sale.get("sale_date"),
-        "total_price": sale.get("total_price")
+        "id": str(sale["_id"]),
+        "medicine_name": sale["medicine_name"],
+        "quantity_sold": sale["quantity_sold"],
+        "sale_date": sale["sale_date"],
+        "total_price": sale["total_price"],
     }
 
-# Create a sale
+# Create/Add a new sale
 @router.post("/")
 def create_sale(sale: Sale):
     medicine = medicine_collection.find_one({"name": sale.medicine_name})
@@ -25,24 +26,19 @@ def create_sale(sale: Sale):
     if medicine["quantity"] < sale.quantity_sold:
         raise HTTPException(status_code=400, detail="Not enough stock available")
 
-    # Deduct sold quantity
+    # Reduce stock
     medicine_collection.update_one(
-        {"_id": medicine["_id"]},
+        {"name": sale.medicine_name},
         {"$inc": {"quantity": -sale.quantity_sold}}
     )
 
-    total_price = sale.quantity_sold * medicine["price"]
+    # Create sale record
+    sale_dict = sale.dict()
+    sale_dict["sale_date"] = datetime.today().strftime("%Y-%m-%d %H:%M:%S")
+    sale_dict["total_price"] = medicine["price"] * sale.quantity_sold
 
-    sale_doc = {
-        "medicine_name": sale.medicine_name,
-        "quantity_sold": sale.quantity_sold,
-        "sale_date": datetime.today().strftime("%Y-%m-%d"),
-        "total_price": total_price
-    }
-
-    result = sales_collection.insert_one(sale_doc)
+    result = sales_collection.insert_one(sale_dict)
     new_sale = sales_collection.find_one({"_id": result.inserted_id})
-
     return {"message": "Sale recorded successfully", "data": sale_helper(new_sale)}
 
 # Get all sales
@@ -59,24 +55,32 @@ def get_sales_by_medicine(medicine_name: str):
     sales = []
     for sale in sales_collection.find({"medicine_name": medicine_name}):
         sales.append(sale_helper(sale))
-
     if not sales:
         raise HTTPException(status_code=404, detail=f"No sales found for {medicine_name}")
-
-    return {"message": f"Sales for {medicine_name}", "data": sales}
+    return {"message": f"Sales records for {medicine_name}", "data": sales}
 
 # Delete all sales
-@router.delete("/")
+@router.delete("/delete-all/")
 def delete_all_sales():
-    result = sales_collection.delete_many({})  # deletes all documents in sales collection
-    # result.deleted_count is the number of documents removed
-    return {"message": "All sales deleted", "deleted_count": result.deleted_count}
+    result = sales_collection.delete_many({})
+    return {"message": f"All sales deleted successfully. Count: {result.deleted_count}"}
 
 # Delete sales by medicine name
-@router.delete("/{medicine_name}")
+@router.delete("/delete/{medicine_name}")
 def delete_sales_by_medicine(medicine_name: str):
-    # Remove all sales documents where medicine_name matches
     result = sales_collection.delete_many({"medicine_name": medicine_name})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"No sales found for {medicine_name}")
-    return {"message": f"Sales for '{medicine_name}' deleted", "deleted_count": result.deleted_count}
+    return {"message": f"All sales for {medicine_name} deleted successfully. Count: {result.deleted_count}"}
+
+# ✅ New Feature: Delete sale by ID
+@router.delete("/delete-by-id/{sale_id}")
+def delete_sale_by_id(sale_id: str):
+    if not ObjectId.is_valid(sale_id):
+        raise HTTPException(status_code=400, detail="Invalid sale ID format")
+    
+    result = sales_collection.delete_one({"_id": ObjectId(sale_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Sale not found")
+    
+    return {"message": f"Sale with ID {sale_id} deleted successfully"}
